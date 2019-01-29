@@ -1,21 +1,21 @@
 /*
-  BME280.js
+  BMP3xx.js
 
-  A Node.js I2C module for the Bosch BME280 Humidity, Barometric Pressure, and Temperature Sensor.
+  A Node.js I2C module for the Bosch BMP3xx Humidity, Barometric Pressure, and Temperature Sensor.
 
   Support is also included for the Bosch BMP280 Barometric Pressure and Temperature Sensor.
 */
 
 'use strict';
 
-class BME280 {
+class BMP3xx {
 
   constructor(options) {
     const i2c = require('i2c-bus');
 
-    this.i2cBusNo = (options && options.hasOwnProperty('i2cBusNo')) ? options.i2cBusNo : 1;    
+    this.i2cBusNo = (options && options.hasOwnProperty('i2cBusNo')) ? options.i2cBusNo : 1;
     this.i2cBus = i2c.openSync(this.i2cBusNo);
-    this.i2cAddress = (options && options.hasOwnProperty('i2cAddress')) ? options.i2cAddress : BME280.BME280_DEFAULT_I2C_ADDRESS();
+    this.i2cAddress = (options && options.hasOwnProperty('i2cAddress')) ? options.i2cAddress : BMP3xx.BMP3xx_DEFAULT_I2C_ADDRESS();
 
     this.I2C_ADDRESS_B   = 0x76;
     this.I2C_ADDRESS_A   = 0x77;
@@ -63,10 +63,10 @@ class BME280 {
             return reject(err);
           }
 
-          else if(chipId !== BME280.CHIP_ID_BME280() &&
-                  chipId !== BME280.CHIP_ID1_BMP280() &&
-                  chipId !== BME280.CHIP_ID2_BMP280() &&
-                  chipId !== BME280.CHIP_ID3_BMP280()) {
+          else if(chipId !== BMP3xx.CHIP_ID_BMP3xx() &&
+                  chipId !== BMP3xx.CHIP_ID1_BMP280() &&
+                  chipId !== BMP3xx.CHIP_ID2_BMP280() &&
+                  chipId !== BMP3xx.CHIP_ID3_BMP280()) {
             return reject(`Unexpected BMx280 chip ID: 0x${chipId.toString(16)}`);
           }
 
@@ -125,7 +125,7 @@ class BME280 {
 
         // Temperature (temperature first since we need t_fine for pressure and humidity)
         //
-        let adc_T = BME280.uint20(buffer[3], buffer[4], buffer[5]);
+        let adc_T = BMP3xx.uint20(buffer[3], buffer[4], buffer[5]);
         let tvar1 = ((((adc_T >> 3) - (this.cal.dig_T1 << 1))) * this.cal.dig_T2) >> 11;
         let tvar2  = (((((adc_T >> 4) - this.cal.dig_T1) * ((adc_T >> 4) - this.cal.dig_T1)) >> 12) * this.cal.dig_T3) >> 14;
         let t_fine = tvar1 + tvar2;
@@ -134,7 +134,7 @@ class BME280 {
 
         // Pressure
         //
-        let adc_P = BME280.uint20(buffer[0], buffer[1], buffer[2]);
+        let adc_P = BMP3xx.uint20(buffer[0], buffer[1], buffer[2]);
         let pvar1 = t_fine / 2 - 64000;
         let pvar2 = pvar1 * pvar1 * this.cal.dig_P6 / 32768;
         pvar2 = pvar2 + pvar1 * this.cal.dig_P5 * 2;
@@ -154,9 +154,9 @@ class BME280 {
           pressure_hPa = p / 100;
         }
 
-        // Humidity (available on the BME280, will be zero on the BMP280 since it has no humidity sensor)
+        // Humidity (available on the BMP3xx, will be zero on the BMP280 since it has no humidity sensor)
         //
-        let adc_H = BME280.uint16(buffer[6], buffer[7]);
+        let adc_H = BMP3xx.uint16(buffer[6], buffer[7]);
 
         let h = t_fine - 76800;
         h = (adc_H - (this.cal.dig_H4 * 64 + this.cal.dig_H5 / 16384 * h)) *
@@ -185,19 +185,19 @@ class BME280 {
       let h6   = this.i2cBus.readByteSync(this.i2cAddress, this.REGISTER_DIG_H6);
 
       this.cal = {
-        dig_T1: BME280.uint16(buffer[1], buffer[0]),
-        dig_T2: BME280.int16(buffer[3], buffer[2]),
-        dig_T3: BME280.int16(buffer[5], buffer[4]),
+        dig_T1: BMP3xx.uint16(buffer[1], buffer[0]),
+        dig_T2: BMP3xx.int16(buffer[3], buffer[2]),
+        dig_T3: BMP3xx.int16(buffer[5], buffer[4]),
 
-        dig_P1: BME280.uint16(buffer[7], buffer[6]),
-        dig_P2: BME280.int16(buffer[9], buffer[8]),
-        dig_P3: BME280.int16(buffer[11], buffer[10]),
-        dig_P4: BME280.int16(buffer[13], buffer[12]),
-        dig_P5: BME280.int16(buffer[15], buffer[14]),
-        dig_P6: BME280.int16(buffer[17], buffer[16]),
-        dig_P7: BME280.int16(buffer[19], buffer[18]),
-        dig_P8: BME280.int16(buffer[21], buffer[20]),
-        dig_P9: BME280.int16(buffer[23], buffer[22]),
+        dig_P1: BMP3xx.uint16(buffer[7], buffer[6]),
+        dig_P2: BMP3xx.int16(buffer[9], buffer[8]),
+        dig_P3: BMP3xx.int16(buffer[11], buffer[10]),
+        dig_P4: BMP3xx.int16(buffer[13], buffer[12]),
+        dig_P5: BMP3xx.int16(buffer[15], buffer[14]),
+        dig_P6: BMP3xx.int16(buffer[17], buffer[16]),
+        dig_P7: BMP3xx.int16(buffer[19], buffer[18]),
+        dig_P8: BMP3xx.int16(buffer[21], buffer[20]),
+        dig_P9: BMP3xx.int16(buffer[23], buffer[22]),
 
         dig_H1: h1,
         dig_H2: h2,
@@ -207,12 +207,12 @@ class BME280 {
         dig_H6: h6
       };
 
-      //console.log('BME280 cal = ' + JSON.stringify(this.cal, null, 2));
+      //console.log('BMP3xx cal = ' + JSON.stringify(this.cal, null, 2));
       callback();
     });
   }
 
-  static BME280_DEFAULT_I2C_ADDRESS() {
+  static BMP3xx_DEFAULT_I2C_ADDRESS() {
     return 0x77;
   }
 
@@ -228,12 +228,12 @@ class BME280 {
     return 0x58;
   }
 
-  static CHIP_ID_BME280() {
+  static CHIP_ID_BMP3xx() {
     return 0x60;
   }
 
   static int16(msb, lsb) {
-    let val = BME280.uint16(msb, lsb);
+    let val = BMP3xx.uint16(msb, lsb);
     return val > 32767 ? (val - 65536) : val;
   }
 
@@ -245,7 +245,7 @@ class BME280 {
     return ((msb << 8 | lsb) << 8 | xlsb) >> 4;
   }
 
-  static convertCelciusToFahrenheit(c) { 
+  static convertCelciusToFahrenheit(c) {
     return c * 9 / 5 + 32;
   }
 
@@ -266,7 +266,7 @@ class BME280 {
   }
 
   static calculateDewPointCelcius(temperature_C, humidity) {
-    return 243.04 * (Math.log(humidity/100.0) + ((17.625 * temperature_C)/(243.04 + temperature_C))) / 
+    return 243.04 * (Math.log(humidity/100.0) + ((17.625 * temperature_C)/(243.04 + temperature_C))) /
            (17.625 - Math.log(humidity/100.0) - ((17.625 * temperature_C)/(243.04 + temperature_C)));
   }
 
@@ -280,4 +280,4 @@ class BME280 {
 
 }
 
-module.exports = BME280;
+module.exports = BMP3xx;
