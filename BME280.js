@@ -21,10 +21,9 @@ class BMP3xx {
 
     this.I2C_ADDRESS_B   = 0x76;
     this.I2C_ADDRESS_A   = 0x77;
-    this.CHIP_ID         = 0x50;
+    this.CHIP_ID         = 0x50; // only chip ID for the 3xx series
 
-
-    this.REGISTER_CHIPID = 0x00;
+    this.REGISTER_CHIPID        = 0x00;
     this.REGISTER_STATUS        = 0x03;
     this.REGISTER_PRESSURE_DATA = 0x04;
     this.REGISTER_TEMP_DATA     = 0x07;
@@ -34,44 +33,49 @@ class BMP3xx {
     this.REGISTER_ODR           = 0x1D;
     this.REGISTER_CONFIG        = 0x1F;
     this.REGISTER_CAL_DATA      = 0x31;
-    this.REGISTER_CMD = 0x7E;
+    this.REGISTER_CMD           = 0x7E;
 
     this.OSR_SETTINGS = [1, 2, 4, 8, 16, 32]          // pressure and temperature oversampling settings
     this.IIR_SETTINGS = [0, 2, 4, 8, 16, 32, 64, 128] // IIR filter coefficients
 
+    this.defaultOsrSetting = 0b001100  // temperature x2 oversampling, pressure x16 oversampling, recommended per table 5 on page 13
+    // no IIR filter
   }
 
-  init() {
+  readChipId() {
     return new Promise((resolve, reject) => {
       this.i2cBus.writeByte(this.i2cAddress, this.REGISTER_CHIPID, 0, (err) => {
-        if(err) {
+        if (err) {
           return reject(err);
         }
         this.i2cBus.readByte(this.i2cAddress, this.REGISTER_CHIPID, (err, chipId) => {
-          if(err) {
+          if (err) {
+            return reject(err);
+          } else if (chipId !== BMP3xx.CHIP_ID_BMP3xx()) {
+            return reject(`Unexpected BMx3xx chip ID: 0x${chipId.toString(16)}`)
+          } else {
+            console.log(`Found BMx3xx chip ID 0x${chipId.toString(16)} on bus i2c-${this.i2cBusNo}, address 0x${this.i2cAddress.toString(16)}`);
+            return resolve(chipId);
+          }
+        })
+      })
+    })
+  }
+
+  init() {
+    return this.readChipId().
+      then(() => new Promise((resolve, reject) => {
+        this.loadCalibration((err) => {
+          if (err) {
             return reject(err);
           }
-
-          else if(chipId !== BMP3xx.CHIP_ID_BMP3xx()) {
-            return reject(`Unexpected BMx3xx chip ID: 0x${chipId.toString(16)}`);
-          }
-
-          else {
-            console.log(`Found BMx3xx chip ID 0x${chipId.toString(16)} on bus i2c-${this.i2cBusNo}, address 0x${this.i2cAddress.toString(16)}`);
-            this.loadCalibration((err) => {
-              if (err) {
-                return reject(err);
-              }
-              // Temperture/pressure 16x oversampling, normal mode
-              //
-              this.i2cBus.writeByte(this.i2cAddress, this.REGISTER_CONTROL, 0b10110111, (err) => {
-                return err ? reject(err) : resolve(chipId);
-              });
-            });
-          }
-        });
-      });
-    });
+          // Temperture/pressure 16x oversampling, normal mode
+          //
+          this.i2cBus.writeByte(this.i2cAddress, this.REGISTER_CONTROL, this.defaultOsrSetting, (err) => {
+            return err ? reject(err) : resolve();
+          });
+        })
+    }))
   }
 
   // reset()
@@ -87,7 +91,20 @@ class BMP3xx {
     });
   }
 
+  initiateReadOut() {
+    return new Promise((resolve, reject) => {
+      this.i2cBus.writeByte(this.i2cAddress, this.REGISTER_CONTROL, 0x13, (err) => {
+        if (err) return reject(err)
+        setTimeout(resolve, 50)
+      })
+    })
+  }
+
   readSensorData() {
+    return this.initiateReadOut().then(() => this.getData())
+  }
+
+  getData() {
     return new Promise((resolve, reject) => {
       if(!this.cal) {
         return reject('You must first call bme280.init()');
@@ -140,7 +157,11 @@ class BMP3xx {
   }
 
   loadCalibration(callback) {
-    this.i2cBus.readI2cBlock(this.i2cAddress, this.REGISTER_CAL_DATA, 21, new Buffer(21), (err, bytesRead, buffer) => {
+    const bytesToRead = 21
+
+    this.i2cBus.readI2cBlock(this.i2cAddress, this.REGISTER_CAL_DATA, bytesToRead, new Buffer(bytesToRead), (err, bytesRead, buffer) => {
+      if (err) callback(err)
+      if (bytesRead !== bytesToRead) console.warn(`Read only ${bytesRead} / ${bytesToRead} bytes`)
 
       let offset = 0
       "HHb"
