@@ -9,16 +9,29 @@
 'use strict';
 
 class BMP3xx {
+  static DEFAULT_I2C_ADDRESS() {
+    return 0x76;
+  }
 
   constructor(options) {
     const i2c = require('i2c-bus');
-    this.seaLevelPressure = 1013.25
     this.cal = null
+
+    this.setConstants()
 
     this.i2cBusNo = (options && options.hasOwnProperty('i2cBusNo')) ? options.i2cBusNo : 1;
     this.i2cBus = i2c.openSync(this.i2cBusNo);
-    this.i2cAddress = (options && options.hasOwnProperty('i2cAddress')) ? options.i2cAddress : BMP3xx.BMP3xx_DEFAULT_I2C_ADDRESS();
+    this.i2cAddress = (options && options.hasOwnProperty('i2cAddress')) ? options.i2cAddress : BMP3xx.DEFAULT_I2C_ADDRESS();
 
+    this.osrSetting             = 0b001100  // temperature x2 oversampling, pressure x16 oversampling, recommended per table 5 on page 13
+    this.seaLevelPressure       = 1013.25
+
+    this.continuousMeasurement = false
+    this.ctrl = (this.continuousMeasurement) ? 0b110011 : 0b010011
+  }
+
+  setConstants() {
+    this.CHIP_ID                = 0x50;
     this.REGISTER_CHIPID        = 0x00;
     this.REGISTER_STATUS        = 0x03;
     this.REGISTER_PRESSURE_DATA = 0x04;
@@ -31,11 +44,8 @@ class BMP3xx {
     this.REGISTER_CAL_DATA      = 0x31;
     this.REGISTER_CMD           = 0x7E;
 
-    this.OSR_SETTINGS = [1, 2, 4, 8, 16, 32]          // pressure and temperature oversampling settings
-    this.IIR_SETTINGS = [0, 2, 4, 8, 16, 32, 64, 128] // IIR filter coefficients
-
-    this.defaultOsrSetting = 0b001100  // temperature x2 oversampling, pressure x16 oversampling, recommended per table 5 on page 13
-    // no IIR filter
+    this.OSR_SETTINGS           = [1, 2, 4, 8, 16, 32] // pressure and temperature oversampling settings
+    this.IIR_SETTINGS           = [0, 2, 4, 8, 16, 32, 64, 128] // IIR filter coefficients
   }
 
   readChipId() {
@@ -47,7 +57,7 @@ class BMP3xx {
         this.i2cBus.readByte(this.i2cAddress, this.REGISTER_CHIPID, (err, chipId) => {
           if (err) {
             return reject(err);
-          } else if (chipId !== BMP3xx.CHIP_ID_BMP3xx()) {
+          } else if (chipId !== this.CHIP_ID) {
             return reject(`Unexpected BMx3xx chip ID: 0x${chipId.toString(16)}`)
           } else {
             console.log(`Found BMx3xx chip ID 0x${chipId.toString(16)} on bus i2c-${this.i2cBusNo}, address 0x${this.i2cAddress.toString(16)}`);
@@ -65,11 +75,7 @@ class BMP3xx {
           if (err) {
             return reject(err);
           }
-          // Temperture/pressure 16x oversampling, normal mode
-          //
-          this.i2cBus.writeByte(this.i2cAddress, this.REGISTER_CONTROL, this.defaultOsrSetting, (err) => {
-            return err ? reject(err) : resolve();
-          });
+          resolve()
         })
     }))
   }
@@ -89,10 +95,34 @@ class BMP3xx {
 
   initiateReadOut() {
     return new Promise((resolve, reject) => {
-      this.i2cBus.writeByte(this.i2cAddress, this.REGISTER_CONTROL, 0x13, (err) => {
+      this.i2cBus.writeByte(this.i2cAddress, this.REGISTER_CONTROL, this.ctrl, (err) => {
         if (err) return reject(err)
         setTimeout(resolve, 50)
       })
+    })
+  }
+
+  setOSR(pressureRep, temperatureRep) {
+    let pIndex = this.OSR_SETTINGS.indexOf(pressureRep)
+    let tIndex = this.OSR_SETTINGS.indexOf(temperatureRep)
+
+    pIndex = (pIndex !== -1) ? pIndex : 1
+    tIndex = (tIndex !== -1) ? tIndex : 1
+
+    this.osrSetting = (tIndex & 0b111) << 3 | (pIndex & 0b111)
+    return new Promise((resolve, reject) => {
+      this.i2cBus.writeByte(this.i2cAddress, this.REGISTER_CONTROL, this.osrSetting, (err) => {
+        return err ? reject(err) : resolve();
+      });
+    })
+  }
+
+  setODR(repetition) {
+    this.odrSetting = this.ODR on.indexOf(repetition)
+    return new Promise((resolve, reject) => {
+      this.i2cBus.writeByte(this.i2cAddress, this.REGISTER_ODR, this.osrSetting, (err) => {
+        return err ? reject(err) : resolve();
+      });
     })
   }
 
@@ -203,14 +233,6 @@ class BMP3xx {
     });
   }
 
-  static BMP3xx_DEFAULT_I2C_ADDRESS() {
-    return 0x76;
-  }
-
-  static CHIP_ID_BMP3xx() {
-    return 0x50;
-  }
-
   static uint24(msb, lsb, xlsb) {
     return msb << 16 | lsb << 8 | xlsb;
   }
@@ -225,19 +247,6 @@ class BMP3xx {
 
   static convertMetersToFeet(m) {
     return m * 3.28084;
-  }
-
-  static calculateHeatIndexCelcius(temperature_C, humidity) {
-    return -8.784695 + 1.61139411 * temperature_C + 2.33854900 * humidity +
-           -0.14611605 * temperature_C * humidity + -0.01230809 * Math.pow(temperature_C, 2) +
-           -0.01642482 * Math.pow(humidity, 2) + 0.00221173 * Math.pow(temperature_C, 2) * humidity +
-           0.00072546 * temperature_C * Math.pow(humidity, 2) +
-           -0.00000358 * Math.pow(temperature_C, 2) * Math.pow(humidity, 2);
-  }
-
-  static calculateDewPointCelcius(temperature_C, humidity) {
-    return 243.04 * (Math.log(humidity/100.0) + ((17.625 * temperature_C)/(243.04 + temperature_C))) /
-           (17.625 - Math.log(humidity/100.0) - ((17.625 * temperature_C)/(243.04 + temperature_C)));
   }
 
   static calculateAltitudeMeters(pressure_hPa, seaLevelPressure_hPa) {

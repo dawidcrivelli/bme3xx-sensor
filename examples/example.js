@@ -4,7 +4,7 @@ const BMP3xx = require('../BMP3xx');
 //
 const options = {
   i2cBusNo   : 1, // defaults to 1
-  i2cAddress : BMP3xx.BMP3xx_DEFAULT_I2C_ADDRESS()
+  i2cAddress : BMP3xx.DEFAULT_I2C_ADDRESS()
 };
 
 const bmp388 = new BMP3xx(options);
@@ -14,7 +14,7 @@ const bmp388 = new BMP3xx(options);
 const readSensorData = () => {
   bmp388.readSensorData()
     .then((data) => {
-      // temperature_C, pressure_hPa, and humidity are returned by default.
+      // temperature_C, pressure_hPa are returned by default.
       // I'll also calculate some unit conversions for display purposes.
 
       data.altitude_m = BMP3xx.calculateAltitudeMeters(data.pressure_hPa, 998.0)
@@ -32,7 +32,10 @@ const readSensorData = () => {
 //
 bmp388.init()
   .then(() => {
+    bmp388.setOSR(16, 2)
+  })
+  .then(() => {
     console.log('BMP3xx initialization succeeded');
     readSensorData();
   })
-  .catch((err) => console.error(`BMP3xx initialization failed: ${err} `));
+  .catch((err) => console.error(`BMP3xx fault: ${err} `));
