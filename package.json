@@ -1,14 +1,11 @@
 {
-  "name": "bme280-sensor",
+  "name": "bme3xx-sensor",
   "version": "0.1.6",
   "description": "A Node.js I2C module for the BMP3xx Humidity, Barometric Pressure, and Temperature Sensor. Also includes support for the BMP280 Barometric Pressure and Temperature Sensor.",
   "main": "BMP3xx.js",
-  "scripts": {
-    "test": "mocha"
-  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/skylarstein/bme280-sensor.git"
+    "url": "git+https://github.com/dawidcrivelli/bme3xx-sensor.git"
   },
   "keywords": [
     "BMP3xx",
@@ -25,15 +22,7 @@
   ],
   "author": "Skylar Stein",
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/skylarstein/bme280-sensor/issues"
-  },
-  "homepage": "https://github.com/skylarstein/bme280-sensor#readme",
   "dependencies": {
     "i2c-bus": "^1.2.0"
-  },
-  "devDependencies": {
-    "chai": "^3.5.0",
-    "mocha": "^3.2.0"
   }
 }
