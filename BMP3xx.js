@@ -19,10 +19,6 @@ class BMP3xx {
     this.i2cBus = i2c.openSync(this.i2cBusNo);
     this.i2cAddress = (options && options.hasOwnProperty('i2cAddress')) ? options.i2cAddress : BMP3xx.BMP3xx_DEFAULT_I2C_ADDRESS();
 
-    this.I2C_ADDRESS_B   = 0x76;
-    this.I2C_ADDRESS_A   = 0x77;
-    this.CHIP_ID         = 0x50; // only chip ID for the 3xx series
-
     this.REGISTER_CHIPID        = 0x00;
     this.REGISTER_STATUS        = 0x03;
     this.REGISTER_PRESSURE_DATA = 0x04;
@@ -104,26 +100,30 @@ class BMP3xx {
     return this.initiateReadOut().then(() => this.getData())
   }
 
-  getData() {
+  testInit() {
     return new Promise((resolve, reject) => {
-      if(!this.cal) {
-        return reject('You must first call bme280.init()');
-      }
+      if (this.cal) resolve()
+      else this.init().then(() => resolve())
+    })
+  }
 
+  async getData() {
+    await this.testInit()
+
+    return new Promise((resolve, reject) => {
       // Grab temperature, humidity, and pressure in a single read
       //
       this.i2cBus.readI2cBlock(this.i2cAddress, this.REGISTER_PRESSURE_DATA, 6, new Buffer(6), (err, bytesRead, buffer) => {
-        if(err) {
-          return reject(err);
+        if (err) {
+          reject(err);
         }
 
         // Temperature (temperature first since we need it for P and H)
-        //
-        let adc_T = BMP3xx.uint20(buffer[3], buffer[4], buffer[5]);
+        let adc_T = BMP3xx.uint24(buffer[5], buffer[4], buffer[3]);
         // Pressure
-        //
-        let adc_P = BMP3xx.uint20(buffer[0], buffer[1], buffer[2]);
+        let adc_P = BMP3xx.uint24(buffer[2], buffer[1], buffer[0]);
 
+        // console.debug(`Raw T: ${adc_T}, raw P: ${adc_P}`)
         let td1 = adc_T - this.cal.T1
         let td2 = td1 * this.cal.T2
 
@@ -146,13 +146,13 @@ class BMP3xx {
         let pd2 = this.cal.P9 + this.cal.P10 * temperature
         let po3 = pd1 * pd2 + this.cal.P11 * adc_P ** 3
 
-        let pressure_hPa = po1 + po2 + po3
+        let pressure_Pa = po1 + po2 + po3
 
         resolve({
-          temperature_C : temperature,
-          pressure_hPa  : pressure_hPa
+          temperature_C: temperature,
+          pressure_hPa: pressure_Pa / 100.0,
         });
-      });
+      })
     });
   }
 
@@ -198,42 +198,21 @@ class BMP3xx {
 
       this.cal = { T1, T2, T3, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11}
 
-      //console.log('BMP3xx cal = ' + JSON.stringify(this.cal, null, 2));
+      // console.debug('BMP3xx cal = ' + JSON.stringify(this.cal, null, 2));
       callback();
     });
   }
 
   static BMP3xx_DEFAULT_I2C_ADDRESS() {
-    return 0x77;
-  }
-
-  static CHIP_ID1_BMP280() {
-    return 0x56;
-  }
-
-  static CHIP_ID2_BMP280() {
-    return 0x57;
-  }
-
-  static CHIP_ID3_BMP280() {
-    return 0x58;
+    return 0x76;
   }
 
   static CHIP_ID_BMP3xx() {
     return 0x50;
   }
 
-  static int16(msb, lsb) {
-    let val = BMP3xx.uint16(msb, lsb);
-    return val > 32767 ? (val - 65536) : val;
-  }
-
-  static uint16(msb, lsb) {
-    return msb << 8 | lsb;
-  }
-
-  static uint20(msb, lsb, xlsb) {
-    return ((msb << 8 | lsb) << 8 | xlsb) >> 4;
+  static uint24(msb, lsb, xlsb) {
+    return msb << 16 | lsb << 8 | xlsb;
   }
 
   static convertCelciusToFahrenheit(c) {
